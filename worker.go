@@ -1,7 +1,6 @@
-package employer
+package workerPool
 
 import (
-	"sync"
 	"sync/atomic"
 )
 
@@ -13,10 +12,19 @@ var uniqueIdCounter int64 = 0
 
 type worker[TWork any] struct {
 	//Provides direct access to the worker
-	directAccess chan TWork
+	directWork chan TWork
 
 	//If this channel is closed, go routine gets terminated
-	fire chan struct{}
+	terminate chan struct{}
+
+	//A channel of work that this worker will be dealing with
+	workBucket chan TWork
+
+	//This function will be processing the work from workBucket
+	workHandler func(work ...TWork)
+
+	//A different function can be set for direct work send to a worker. If not set, it simply uses workHandler
+	directWorkHandler func(work ...TWork)
 
 	//ID of the worker
 	id int
@@ -24,41 +32,78 @@ type worker[TWork any] struct {
 
 //DirectWork sends some work directly to this worker
 func (w *worker[TWork]) DirectWork(work TWork) {
-	w.directAccess <- work
+	w.directWork <- work
 }
 
-//Fire makes this worker redundant
-func (w *worker[TWork]) Fire() {
-	close(w.fire)
+//Terminate makes this worker redundant
+func (w *worker[TWork]) Terminate() {
+	close(w.terminate)
+}
+
+//SetWorkHandler sets a new handler for all the work done
+func (w *worker[TWork]) SetWorkHandler(handler func(work ...TWork)) {
+	w.workHandler = handler
+}
+
+//SetDirectWorkHandler sets a new worker for all the work that is coming directly for this worker
+func (w *worker[TWork]) SetDirectWorkHandler(handler func(work ...TWork)) {
+	w.directWorkHandler = handler
 }
 
 //===========[FUNCTIONALITY]====================================================================================================
 
 //workerGoroutine is the goroutine that will be spawned for each worker. As an argument you must pass in worker struct
-func workerGoroutine[TWork any](w *worker[TWork], workPile chan TWork) {
+func workerGoroutine[TWork any](w *worker[TWork]) {
 	if w == nil {
 		return
 	}
 
 	for {
 		select {
-		case work := <-w.directAccess:
-		case work := <-workPile:
-		case <-w.fire:
+		case work := <-w.directWork:
+			if w.directWorkHandler == nil {
+				w.workHandler(work)
+				continue
+			}
+			w.directWorkHandler(work)
+
+		case work := <-w.workBucket:
+			w.workHandler(work)
+
+		case <-w.terminate:
+			for {
+				select {
+				case work := <-w.directWork:
+					w.directWorkHandler(work)
+
+				default:
+					break
+				}
+			}
 			break
 		}
 	}
 }
 
-func newWorker[TWork any](workPile chan TWork) *worker[TWork] {
+//Creates and returns a new worker
+func newWorker[TWork any](workPile chan TWork, workHandler, directWorkHandler func(work ...TWork)) *worker[TWork] {
+
+	defaultWorkHandler := func(work ...TWork) {}
 
 	w := &worker[TWork]{
-		directAccess: make(chan TWork, 2),
-		fire:         make(chan struct{}),
-		id:           int(atomic.AddInt64(&uniqueIdCounter, 1)),
+		directWork:        make(chan TWork, 2),
+		terminate:         make(chan struct{}),
+		workBucket:        workPile,
+		workHandler:       workHandler,
+		directWorkHandler: directWorkHandler,
+		id:                int(atomic.AddInt64(&uniqueIdCounter, 1)),
 	}
 
-	go workerGoroutine(w, workPile)
+	if w.workHandler == nil {
+		w.SetWorkHandler(defaultWorkHandler)
+	}
+
+	go workerGoroutine(w)
 
 	return w
 }
