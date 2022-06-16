@@ -52,7 +52,7 @@ func (w *worker[TWork]) SetDirectWorkHandler(handler func(work ...TWork)) {
 
 //===========[FUNCTIONALITY]====================================================================================================
 
-//workerGoroutine is the goroutine that will be spawned for each worker. As an argument you must pass in worker struct
+//workerGoroutine is the goroutine that will be spawned for each worker. As an argument you must pass incomingWork worker struct
 func workerGoroutine[TWork any](w *worker[TWork]) {
 	if w == nil {
 		return
@@ -86,17 +86,21 @@ func workerGoroutine[TWork any](w *worker[TWork]) {
 }
 
 //Creates and returns a new worker
-func newWorker[TWork any](workPile chan TWork, workHandler, directWorkHandler func(work ...TWork)) *worker[TWork] {
+func newWorker[TWork any](workPile chan TWork, workHandler, directWorkHandler func(work ...TWork), terminateChan chan struct{}) *worker[TWork] {
 
 	defaultWorkHandler := func(work ...TWork) {}
 
 	w := &worker[TWork]{
 		directWork:        make(chan TWork, 2),
-		terminate:         make(chan struct{}),
+		terminate:         terminateChan,
 		workBucket:        workPile,
 		workHandler:       workHandler,
 		directWorkHandler: directWorkHandler,
 		id:                int(atomic.AddInt64(&uniqueIdCounter, 1)),
+	}
+
+	if w.terminate == nil {
+		w.terminate = make(chan struct{})
 	}
 
 	if w.workHandler == nil {
