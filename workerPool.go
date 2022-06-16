@@ -1,5 +1,7 @@
 package workerPool
 
+import "github.com/emillis/cacheMachine"
+
 //===========[STATIC/CACHE]====================================================================================================
 
 var defaultRequirements = Requirements{
@@ -10,7 +12,6 @@ var defaultRequirements = Requirements{
 //===========[INTERFACES]====================================================================================================
 
 type Worker interface {
-
 }
 
 //===========[STRUCTS]====================================================================================================
@@ -33,13 +34,24 @@ type WorkerPool[TWork any] struct {
 	Requirements //TODO: make immutable
 
 	//The channel that all workers will get the jobs from
-	in chan<- TWork
+	in chan TWork
 
 	//The channel that all the workers will send results to
-	out <-chan TWork
+	out chan TWork
 
 	//Channel that if closed, terminates all the workers
 	terminateAllWorkers chan struct{}
+
+	//pool of the actual workers
+	workers cacheMachine.Cache[int, *worker[TWork]]
+}
+
+func (wp *WorkerPool[TWork]) addWorkers(n int) {
+	for i := 0; i < n; i++ {
+		w := newWorker[TWork](wp.in, nil, nil)
+
+		wp.workers.Add(w.id, w)
+	}
 }
 
 //===========[FUNCTIONALITY]====================================================================================================
@@ -64,12 +76,14 @@ func New[TWork any](r *Requirements) *WorkerPool[TWork] {
 	makeRequirementsReasonable(r)
 
 	wp := &WorkerPool[TWork]{
-		Requirements: *r,
+		Requirements:        *r,
+		in:                  make(chan TWork),
+		out:                 make(chan TWork),
+		terminateAllWorkers: make(chan struct{}),
+		workers:             cacheMachine.New[int, *worker[TWork]](nil),
 	}
 
-	wp.in = make(chan TWork)
-	wp.out = make(chan TWork)
-	wp.terminateAllWorkers = make(chan struct{})
+	wp.addWorkers(wp.Requirements.MinWorkers)
 
 	return wp
 }
