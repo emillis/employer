@@ -1,6 +1,8 @@
 package workerPool
 
-import "github.com/emillis/cacheMachine"
+import (
+	"github.com/emillis/cacheMachine"
+)
 
 //===========[STATIC/CACHE]====================================================================================================
 
@@ -62,6 +64,22 @@ func (wp *WorkerPool[TWork]) addWorkers(n int) {
 	}
 }
 
+//terminateWorkers removes a number of workers specified in the argument
+func (wp *WorkerPool[TWork]) terminateWorkers(n int) {
+	if n < 1 {
+		return
+	}
+
+	count := wp.workers.Count()
+	if n > count {
+		n = count
+	}
+
+	for i := 0; i < n; i++ {
+		wp.terminateAllWorkers <- struct{}{}
+	}
+}
+
 //------PUBLIC------
 
 //WorkHandler is a function that every worker will use to primarily process all incoming work
@@ -103,7 +121,7 @@ func New[TWork any](r *Requirements) *WorkerPool[TWork] {
 		requirements:        *r,
 		incomingWork:        make(chan TWork, r.WorkBucketSize),
 		out:                 make(chan TWork),
-		terminateAllWorkers: make(chan struct{}),
+		terminateAllWorkers: make(chan struct{}, r.MaxWorkers),
 		workers:             cacheMachine.New[int, *worker[TWork]](nil),
 		workHandler:         func(w ...TWork) {},
 	}
