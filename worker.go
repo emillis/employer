@@ -37,7 +37,7 @@ func (w *worker[TWork]) DirectWork(work TWork) {
 
 //Terminate makes this worker redundant
 func (w *worker[TWork]) Terminate() {
-	close(w.terminate)
+	w.terminate <- struct{}{}
 }
 
 //SetWorkHandler sets a new handler for all the work done
@@ -74,33 +74,36 @@ func workerGoroutine[TWork any](w *worker[TWork]) {
 			for {
 				select {
 				case work := <-w.directWork:
+					if w.directWorkHandler == nil {
+						w.workHandler(work)
+						continue
+					}
 					w.directWorkHandler(work)
 
+				case work := <-w.workBucket:
+					w.workHandler(work)
+
 				default:
-					break
+					return
 				}
 			}
-			break
+
 		}
 	}
 }
 
 //Creates and returns a new worker
-func newWorker[TWork any](workPile chan TWork, workHandler, directWorkHandler func(work ...TWork), terminateChan chan struct{}) *worker[TWork] {
+func newWorker[TWork any](workPile chan TWork, workHandler, directWorkHandler func(work ...TWork)) *worker[TWork] {
 
 	defaultWorkHandler := func(work ...TWork) {}
 
 	w := &worker[TWork]{
 		directWork:        make(chan TWork, 2),
-		terminate:         terminateChan,
+		terminate:         make(chan struct{}, 2),
 		workBucket:        workPile,
 		workHandler:       workHandler,
 		directWorkHandler: directWorkHandler,
 		id:                int(atomic.AddInt64(&uniqueIdCounter, 1)),
-	}
-
-	if w.terminate == nil {
-		w.terminate = make(chan struct{})
 	}
 
 	if w.workHandler == nil {

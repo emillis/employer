@@ -2,17 +2,19 @@ package workerPool
 
 import (
 	"github.com/emillis/cacheMachine"
+	"time"
 )
 
 //===========[STATIC/CACHE]====================================================================================================
 
 var defaultRequirements = Requirements{
-	MinWorkers:     1,
-	MaxWorkers:     1,
-	WorkBucketSize: 10,
+	MinWorkers:            1,
+	MaxWorkers:            1,
+	WorkBucketSize:        10,
+	WorkerSpawnMultiplier: 1,
 }
 
-//===========[INTERFACES]====================================================================================================
+//===========[INTERFACES]===================================================================================================
 
 type Worker interface {
 }
@@ -31,6 +33,11 @@ type Requirements struct {
 
 	//How much work can the channel take incomingWork before starting to block
 	WorkBucketSize int `json:"work_bucket_size" bson:"work_bucket_size"`
+
+	//How many workers to spawn every time a shortage of workers is detected. E.g. If you select this to be 10, this
+	//means, every time there are not enough workers to handle all the work, there will be another 10 spawned at a time
+	//until either they can handle all the work or ceiling of MaxWorkers is reached
+	WorkerSpawnMultiplier int `json:"worker_spawn_multiplier" bson:"worker_spawn_multiplier"`
 }
 
 //WorkerPool provides the main public API to worker pools
@@ -39,12 +46,6 @@ type WorkerPool[TWork any] struct {
 
 	//The channel that all workers will get the jobs from
 	incomingWork chan TWork
-
-	//The channel that all the workers will send results to
-	out chan TWork
-
-	//Channel that if closed, terminates all the workers
-	terminateAllWorkers chan struct{}
 
 	//pool of the actual workers
 	workers cacheMachine.Cache[int, *worker[TWork]]
@@ -58,7 +59,7 @@ type WorkerPool[TWork any] struct {
 //addWorkers add n number of workers to the pool
 func (wp *WorkerPool[TWork]) addWorkers(n int) {
 	for i := 0; i < n; i++ {
-		w := newWorker[TWork](wp.incomingWork, wp.workHandler, nil, wp.terminateAllWorkers)
+		w := newWorker[TWork](wp.incomingWork, wp.workHandler, nil)
 
 		wp.workers.Add(w.id, w)
 	}
@@ -76,7 +77,7 @@ func (wp *WorkerPool[TWork]) terminateWorkers(n int) {
 	}
 
 	for i := 0; i < n; i++ {
-		wp.terminateAllWorkers <- struct{}{}
+		wp.workerTerminator <- struct{}{}
 	}
 }
 
@@ -94,6 +95,37 @@ func (wp *WorkerPool[TWork]) WorkHandler(f func(w ...TWork)) {
 
 //===========[FUNCTIONALITY]====================================================================================================
 
+//This is called as goroutine and it overseas a single WorkerPool element
+func workerPoolGoroutine[TWork any](wp *WorkerPool[TWork]) {
+	if wp == nil {
+		return
+	}
+
+	var length, capacity, remainingPoolCapacity int
+	n := wp.requirements.WorkerSpawnMultiplier
+
+	for {
+		select {
+		case <-time.After(time.Microsecond * 100):
+			length = len(wp.incomingWork) //TODO: Benchmark these. Perhaps not assigning variables is faster?
+			capacity = cap(wp.incomingWork)
+			if float64(length/capacity) < 0.85 {
+				continue
+			}
+
+			remainingPoolCapacity = wp.requirements.MaxWorkers - wp.workers.Count()
+			n = wp.requirements.WorkerSpawnMultiplier
+
+			if n > remainingPoolCapacity {
+				n = remainingPoolCapacity
+			}
+
+			wp.addWorkers(n)
+		}
+	}
+
+}
+
 //Fixes basic logical issues incomingWork the Requirements, such as, MaxWorkers being less than MinWorkers
 func makeRequirementsReasonable(r *Requirements) {
 	if r.MinWorkers < 1 {
@@ -107,6 +139,10 @@ func makeRequirementsReasonable(r *Requirements) {
 	if r.WorkBucketSize < 1 {
 		r.WorkBucketSize = defaultRequirements.WorkBucketSize
 	}
+
+	if r.WorkerSpawnMultiplier < 1 {
+		r.WorkerSpawnMultiplier = 1
+	}
 }
 
 //New creates and returns a new worker pool
@@ -118,15 +154,15 @@ func New[TWork any](r *Requirements) *WorkerPool[TWork] {
 	makeRequirementsReasonable(r)
 
 	wp := &WorkerPool[TWork]{
-		requirements:        *r,
-		incomingWork:        make(chan TWork, r.WorkBucketSize),
-		out:                 make(chan TWork),
-		terminateAllWorkers: make(chan struct{}, r.MaxWorkers),
-		workers:             cacheMachine.New[int, *worker[TWork]](nil),
-		workHandler:         func(w ...TWork) {},
+		requirements: *r,
+		incomingWork: make(chan TWork, r.WorkBucketSize),
+		workers:      cacheMachine.New[int, *worker[TWork]](nil),
+		workHandler:  func(w ...TWork) {},
 	}
 
 	wp.addWorkers(wp.requirements.MinWorkers)
+
+	go workerPoolGoroutine[TWork](wp)
 
 	return wp
 }
