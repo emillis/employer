@@ -2,6 +2,7 @@ package workerPool
 
 import (
 	"sync/atomic"
+	"time"
 )
 
 //===========[STATIC/CACHE]====================================================================================================
@@ -14,17 +15,23 @@ type worker[TWork any] struct {
 	//Provides direct access to the worker
 	directWork chan TWork
 
-	//If this channel is closed, go routine gets terminated
-	terminate chan struct{}
-
 	//A channel of work that this worker will be dealing with
 	workBucket chan TWork
+
+	//If this channel is closed, go routine gets terminated
+	terminate chan struct{}
 
 	//This function will be processing the work from workBucket
 	workHandler func(work ...TWork)
 
 	//A different function can be set for direct work send to a worker. If not set, it simply uses workHandler
 	directWorkHandler func(work ...TWork)
+
+	//Defines amount of time until this worker quits
+	timeout time.Duration
+
+	//When the worker terminates, it sends its ID to this channel
+	timedOutWorkers chan int
 
 	//ID of the worker
 	id int
@@ -58,6 +65,8 @@ func workerGoroutine[TWork any](w *worker[TWork]) {
 		return
 	}
 
+	defer func() { w.timedOutWorkers <- w.id }()
+
 	for {
 		select {
 		case work := <-w.directWork:
@@ -69,6 +78,9 @@ func workerGoroutine[TWork any](w *worker[TWork]) {
 
 		case work := <-w.workBucket:
 			w.workHandler(work)
+
+		case <-time.After(w.timeout):
+			w.Terminate()
 
 		case <-w.terminate:
 			for {
@@ -93,7 +105,7 @@ func workerGoroutine[TWork any](w *worker[TWork]) {
 }
 
 //Creates and returns a new worker
-func newWorker[TWork any](workPile chan TWork, workHandler, directWorkHandler func(work ...TWork)) *worker[TWork] {
+func newWorker[TWork any](workPile chan TWork, workHandler, directWorkHandler func(work ...TWork), timeout time.Duration, timedOutWorkers chan int) *worker[TWork] {
 
 	defaultWorkHandler := func(work ...TWork) {}
 
@@ -103,6 +115,8 @@ func newWorker[TWork any](workPile chan TWork, workHandler, directWorkHandler fu
 		workBucket:        workPile,
 		workHandler:       workHandler,
 		directWorkHandler: directWorkHandler,
+		timeout:           timeout,
+		timedOutWorkers:   timedOutWorkers,
 		id:                int(atomic.AddInt64(&uniqueIdCounter, 1)),
 	}
 

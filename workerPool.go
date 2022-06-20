@@ -47,6 +47,9 @@ type WorkerPool[TWork any] struct {
 	//The channel that all workers will get the jobs from
 	incomingWork chan TWork
 
+	//If a worker times out, it will send its ID via this channel
+	timedOutWorkers chan int
+
 	//pool of the actual workers
 	workers cacheMachine.Cache[int, *worker[TWork]]
 
@@ -57,9 +60,9 @@ type WorkerPool[TWork any] struct {
 //------PRIVATE------
 
 //addWorkers add n number of workers to the pool
-func (wp *WorkerPool[TWork]) addWorkers(n int) {
+func (wp *WorkerPool[TWork]) addWorkers(n int, timeout time.Duration) {
 	for i := 0; i < n; i++ {
-		w := newWorker[TWork](wp.incomingWork, wp.workHandler, nil)
+		w := newWorker[TWork](wp.incomingWork, wp.workHandler, nil, timeout, wp.timedOutWorkers)
 
 		wp.workers.Add(w.id, w)
 	}
@@ -67,18 +70,18 @@ func (wp *WorkerPool[TWork]) addWorkers(n int) {
 
 //terminateWorkers removes a number of workers specified in the argument
 func (wp *WorkerPool[TWork]) terminateWorkers(n int) {
-	if n < 1 {
-		return
-	}
-
-	count := wp.workers.Count()
-	if n > count {
-		n = count
-	}
-
-	for i := 0; i < n; i++ {
-		wp.workerTerminator <- struct{}{}
-	}
+	//if n < 1 {
+	//	return
+	//}
+	//
+	//count := wp.workers.Count()
+	//if n > count {
+	//	n = count
+	//}
+	//
+	//for i := 0; i < n; i++ {
+	//	wp.workerTerminator <- struct{}{}
+	//}
 }
 
 //------PUBLIC------
@@ -91,6 +94,20 @@ func (wp *WorkerPool[TWork]) WorkHandler(f func(w ...TWork)) {
 	}
 
 	wp.workHandler = f
+
+	for _, worker := range wp.workers.GetAll() {
+		worker.SetWorkHandler(f)
+	}
+}
+
+//AddWork sends work to workers
+func (wp *WorkerPool[TWork]) AddWork(w TWork) {
+	wp.incomingWork <- w
+}
+
+//ActiveWorkerCount returns number of active workers in the worker pool
+func (wp *WorkerPool[TWork]) ActiveWorkerCount() int {
+	return wp.workers.Count()
 }
 
 //===========[FUNCTIONALITY]====================================================================================================
@@ -101,15 +118,15 @@ func workerPoolGoroutine[TWork any](wp *WorkerPool[TWork]) {
 		return
 	}
 
-	var length, capacity, remainingPoolCapacity int
+	var length, remainingPoolCapacity int
 	n := wp.requirements.WorkerSpawnMultiplier
 
 	for {
 		select {
+		//Spawning more workers if there is too much work
 		case <-time.After(time.Microsecond * 100):
 			length = len(wp.incomingWork) //TODO: Benchmark these. Perhaps not assigning variables is faster?
-			capacity = cap(wp.incomingWork)
-			if float64(length/capacity) < 0.85 {
+			if length <= wp.requirements.MinWorkers {
 				continue
 			}
 
@@ -120,7 +137,12 @@ func workerPoolGoroutine[TWork any](wp *WorkerPool[TWork]) {
 				n = remainingPoolCapacity
 			}
 
-			wp.addWorkers(n)
+			wp.addWorkers(n, time.Millisecond*500)
+
+		//If there's a worker that has timed out, it will send its ID to this channel and ite can then be removed from cache
+		case id := <-wp.timedOutWorkers:
+			wp.workers.Remove(id)
+
 		}
 	}
 
@@ -154,13 +176,14 @@ func New[TWork any](r *Requirements) *WorkerPool[TWork] {
 	makeRequirementsReasonable(r)
 
 	wp := &WorkerPool[TWork]{
-		requirements: *r,
-		incomingWork: make(chan TWork, r.WorkBucketSize),
-		workers:      cacheMachine.New[int, *worker[TWork]](nil),
-		workHandler:  func(w ...TWork) {},
+		requirements:    *r,
+		incomingWork:    make(chan TWork, r.WorkBucketSize),
+		timedOutWorkers: make(chan int, r.MaxWorkers),
+		workers:         cacheMachine.New[int, *worker[TWork]](nil),
+		workHandler:     nil,
 	}
 
-	wp.addWorkers(wp.requirements.MinWorkers)
+	wp.addWorkers(wp.requirements.MinWorkers, time.Hour*8760)
 
 	go workerPoolGoroutine[TWork](wp)
 
