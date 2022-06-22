@@ -16,9 +16,6 @@ var defaultRequirements = Requirements{
 
 //===========[INTERFACES]===================================================================================================
 
-type Worker interface {
-}
-
 //===========[STRUCTS]====================================================================================================
 
 //Requirements define the rules for worker pool management. Such as number of workers
@@ -54,7 +51,7 @@ type WorkerPool[TWork any] struct {
 	workers cacheMachine.Cache[int, *worker[TWork]]
 
 	//This will be passed to each worker to use for work processing
-	workHandler func(...TWork)
+	workHandler func(Worker, TWork)
 }
 
 //------PRIVATE------
@@ -88,7 +85,7 @@ func (wp *WorkerPool[TWork]) terminateWorkers(n int) {
 
 //WorkHandler is a function that every worker will use to primarily process all incoming work
 //Note, you can set WorkHandler only once. Once set, the subsequent calls to change it will be ignored
-func (wp *WorkerPool[TWork]) WorkHandler(f func(w ...TWork)) {
+func (wp *WorkerPool[TWork]) WorkHandler(f func(Worker, TWork)) {
 	if wp.workHandler != nil {
 		return
 	}

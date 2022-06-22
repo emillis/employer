@@ -9,6 +9,12 @@ import (
 
 var uniqueIdCounter int64 = 0
 
+//===========[INTERFACES]====================================================================================================
+
+type Worker interface {
+	Id() int
+}
+
 //===========[STRUCTS]====================================================================================================
 
 type worker[TWork any] struct {
@@ -22,10 +28,10 @@ type worker[TWork any] struct {
 	terminate chan struct{}
 
 	//This function will be processing the work from workBucket
-	workHandler func(work ...TWork)
+	workHandler func(Worker, TWork)
 
 	//A different function can be set for direct work send to a worker. If not set, it simply uses workHandler
-	directWorkHandler func(work ...TWork)
+	directWorkHandler func(Worker, TWork)
 
 	//Defines amount of time until this worker quits
 	timeout time.Duration
@@ -48,13 +54,18 @@ func (w *worker[TWork]) Terminate() {
 }
 
 //SetWorkHandler sets a new handler for all the work done
-func (w *worker[TWork]) SetWorkHandler(handler func(work ...TWork)) {
+func (w *worker[TWork]) SetWorkHandler(handler func(Worker, TWork)) {
 	w.workHandler = handler
 }
 
 //SetDirectWorkHandler sets a new worker for all the work that is coming directly for this worker
-func (w *worker[TWork]) SetDirectWorkHandler(handler func(work ...TWork)) {
+func (w *worker[TWork]) SetDirectWorkHandler(handler func(Worker, TWork)) {
 	w.directWorkHandler = handler
+}
+
+//Id returns this worker's ID
+func (w *worker[TWork]) Id() int {
+	return w.id
 }
 
 //===========[FUNCTIONALITY]====================================================================================================
@@ -71,13 +82,13 @@ func workerGoroutine[TWork any](w *worker[TWork]) {
 		select {
 		case work := <-w.directWork:
 			if w.directWorkHandler == nil {
-				w.workHandler(work)
+				w.workHandler(w, work)
 				continue
 			}
-			w.directWorkHandler(work)
+			w.directWorkHandler(w, work)
 
 		case work := <-w.workBucket:
-			w.workHandler(work)
+			w.workHandler(w, work)
 
 		case <-time.After(w.timeout):
 			w.Terminate()
@@ -87,13 +98,13 @@ func workerGoroutine[TWork any](w *worker[TWork]) {
 				select {
 				case work := <-w.directWork:
 					if w.directWorkHandler == nil {
-						w.workHandler(work)
+						w.workHandler(w, work)
 						continue
 					}
-					w.directWorkHandler(work)
+					w.directWorkHandler(w, work)
 
 				case work := <-w.workBucket:
-					w.workHandler(work)
+					w.workHandler(w, work)
 
 				default:
 					return
@@ -105,9 +116,9 @@ func workerGoroutine[TWork any](w *worker[TWork]) {
 }
 
 //Creates and returns a new worker
-func newWorker[TWork any](workPile chan TWork, workHandler, directWorkHandler func(work ...TWork), timeout time.Duration, timedOutWorkers chan int) *worker[TWork] {
+func newWorker[TWork any](workPile chan TWork, workHandler, directWorkHandler func(Worker, TWork), timeout time.Duration, timedOutWorkers chan int) *worker[TWork] {
 
-	defaultWorkHandler := func(work ...TWork) {}
+	defaultWorkHandler := func(Worker, TWork) {}
 
 	w := &worker[TWork]{
 		directWork:        make(chan TWork, 2),
