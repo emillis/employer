@@ -83,3 +83,24 @@ func TestWorkerPool_AddWork(t *testing.T) {
 		t.Errorf("Variable result should be \"%s\", got \"%s\"", expectedResult, result)
 	}
 }
+
+func TestWorker_Id(t *testing.T) {
+	wp := New[string](nil)
+	wg := sync.WaitGroup{}
+	result := 0
+	requiredResult := 1
+
+	wp.WorkHandler(func(w Worker, work string) {
+		wg.Done()
+		result = w.Id()
+	})
+
+	wg.Add(1)
+	wp.AddWork("x1")
+
+	wg.Wait()
+
+	if result != requiredResult {
+		t.Errorf("Required result is %d, got %d", requiredResult, result)
+	}
+}
