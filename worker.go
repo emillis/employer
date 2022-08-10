@@ -12,9 +12,6 @@ var uniqueIdCounter int64 = 0
 //===========[STRUCTS]====================================================================================================
 
 type worker[TWork any] struct {
-	//Provides direct access to the worker
-	directWork chan TWork
-
 	//A channel of work that this worker will be dealing with
 	workBucket chan TWork
 
@@ -23,9 +20,6 @@ type worker[TWork any] struct {
 
 	//This function will be processing the work from workBucket
 	workHandler func(Worker, TWork)
-
-	//A different function can be set for direct work send to a worker. If not set, it simply uses workHandler
-	directWorkHandler func(Worker, TWork)
 
 	//Defines amount of time until this worker quits
 	timeout time.Duration
@@ -37,24 +31,9 @@ type worker[TWork any] struct {
 	id int
 }
 
-//DirectWork sends some work directly to this worker
-func (w *worker[TWork]) DirectWork(work TWork) {
-	w.directWork <- work
-}
-
 //Terminate makes this worker redundant
 func (w *worker[TWork]) Terminate() {
 	w.terminate <- struct{}{}
-}
-
-//SetWorkHandler sets a new handler for all the work done
-func (w *worker[TWork]) SetWorkHandler(handler func(Worker, TWork)) {
-	w.workHandler = handler
-}
-
-//SetDirectWorkHandler sets a new worker for all the work that is coming directly for this worker
-func (w *worker[TWork]) SetDirectWorkHandler(handler func(Worker, TWork)) {
-	w.directWorkHandler = handler
 }
 
 //Id returns this worker's ID
@@ -74,13 +53,6 @@ func workerGoroutine[TWork any](w *worker[TWork]) {
 
 	for {
 		select {
-		case work := <-w.directWork:
-			if w.directWorkHandler == nil {
-				w.workHandler(w, work)
-				continue
-			}
-			w.directWorkHandler(w, work)
-
 		case work := <-w.workBucket:
 			w.workHandler(w, work)
 
@@ -90,13 +62,6 @@ func workerGoroutine[TWork any](w *worker[TWork]) {
 		case <-w.terminate:
 			for {
 				select {
-				case work := <-w.directWork:
-					if w.directWorkHandler == nil {
-						w.workHandler(w, work)
-						continue
-					}
-					w.directWorkHandler(w, work)
-
 				case work := <-w.workBucket:
 					w.workHandler(w, work)
 
@@ -110,23 +75,18 @@ func workerGoroutine[TWork any](w *worker[TWork]) {
 }
 
 //Creates and returns a new worker
-func newWorker[TWork any](workPile chan TWork, workHandler, directWorkHandler func(Worker, TWork), timeout time.Duration, timedOutWorkers chan int) *worker[TWork] {
-
-	defaultWorkHandler := func(Worker, TWork) {}
+func newWorker[TWork any](workPile chan TWork, workHandler func(Worker, TWork), timeout time.Duration, timedOutWorkers chan int) *worker[TWork] {
+	if workHandler == nil {
+		workHandler = func(Worker, TWork){}
+	}
 
 	w := &worker[TWork]{
-		directWork:        make(chan TWork, 2),
 		terminate:         make(chan struct{}, 2),
 		workBucket:        workPile,
 		workHandler:       workHandler,
-		directWorkHandler: directWorkHandler,
 		timeout:           timeout,
 		timedOutWorkers:   timedOutWorkers,
 		id:                int(atomic.AddInt64(&uniqueIdCounter, 1)),
-	}
-
-	if w.workHandler == nil {
-		w.SetWorkHandler(defaultWorkHandler)
 	}
 
 	go workerGoroutine(w)
