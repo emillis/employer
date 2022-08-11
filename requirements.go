@@ -4,9 +4,9 @@ package workerPool
 
 var defaultRequirements = Requirements{
 	MinWorkers:            1,
-	MaxWorkers:            1,
+	MaxWorkers:            10,
 	WorkBucketSize:        10,
-	WorkerSpawnMultiplier: 1,
+	WorkerSpawnMultiplier: 2,
 }
 
 //===========[STRUCTS]==================================================================================================
@@ -28,4 +28,25 @@ type Requirements struct {
 	//means, every time there are not enough workers to handle all the work, there will be another 10 spawned at a time
 	//until either they can handle all the work or ceiling of MaxWorkers is reached
 	WorkerSpawnMultiplier int `json:"worker_spawn_multiplier" bson:"worker_spawn_multiplier"`
+}
+
+//===========[FUNCTIONS]====================================================================================================
+
+//Fixes basic logical issues incomingWork the Requirements, such as, MaxWorkers being less than MinWorkers
+func makeRequirementsReasonable(r *Requirements) {
+	if r.MinWorkers < 1 {
+		r.MinWorkers = defaultRequirements.MinWorkers
+	}
+
+	if r.MaxWorkers < r.MinWorkers {
+		r.MaxWorkers = r.MinWorkers
+	}
+
+	if r.WorkBucketSize < 1 {
+		r.WorkBucketSize = defaultRequirements.WorkBucketSize
+	}
+
+	if r.WorkerSpawnMultiplier < 1 {
+		r.WorkerSpawnMultiplier = 1
+	}
 }
