@@ -15,26 +15,49 @@ type worker[TWork any] struct {
 	//A channel of work that this worker will be dealing with
 	workBucket chan TWork
 
-	//If this channel is closed, go routine gets terminated
-	terminate chan struct{}
-
 	//This function will be processing the work from workBucket
 	workHandler func(Worker, TWork)
 
-	//Defines amount of time until this worker quits
-	timeout time.Duration
+	//Holds pointer to the pool this worker resides in
+	workerPool *WorkerPool[TWork]
 
-	//When the worker terminates, it sends its ID to this channel
-	timedOutWorkers chan int
+	timeout time.Duration
 
 	//ID of the worker
 	id int
 }
 
-//Terminate makes this worker redundant
-func (w *worker[TWork]) Terminate() {
-	w.terminate <- struct{}{}
+//spawnGoroutine spawns a new goroutine that monitors this worker
+func (w *worker[TWork]) spawnGoroutine() {
+	go func() {
+		defer w.workerPool.workers.Remove(w.id)
+
+		exit := make(chan struct{})
+
+		t := time.AfterFunc(w.timeout, func() {
+			exit <- struct{}{}
+		})
+
+		for {
+			select {
+			case work := <-w.workBucket:
+				stoppedOnTime := t.Stop()
+				w.workHandler(w, work)
+				//If this check is not made, you can restart the timer after this goroutine has already exited
+				//and once the timer fires it will try to send signal down the channel that nobody is listening to
+				if !stoppedOnTime {
+					continue
+				}
+				t.Reset(w.timeout)
+
+			case <-exit:
+				break
+			}
+		}
+	}()
 }
+
+//===========[PUBLIC]====================================================================================================
 
 //Id returns this worker's ID
 func (w *worker[TWork]) Id() int {
@@ -43,53 +66,7 @@ func (w *worker[TWork]) Id() int {
 
 //===========[FUNCTIONALITY]====================================================================================================
 
-//workerGoroutine is the goroutine that will be spawned for each worker. As an argument you must pass incomingWork worker struct
-func workerGoroutine[TWork any](w *worker[TWork]) {
-	if w == nil {
-		return
-	}
-
-	defer func() { w.timedOutWorkers <- w.id }()
-
-	for {
-		select {
-		case work := <-w.workBucket:
-			w.workHandler(w, work)
-
-		case <-time.After(w.timeout):
-			w.Terminate()
-
-		case <-w.terminate:
-			for {
-				select {
-				case work := <-w.workBucket:
-					w.workHandler(w, work)
-
-				default:
-					return
-				}
-			}
-
-		}
-	}
-}
-
-//Creates and returns a new worker
-func newWorker[TWork any](workPile chan TWork, workHandler func(Worker, TWork), timeout time.Duration, timedOutWorkers chan int) *worker[TWork] {
-	if workHandler == nil {
-		workHandler = func(Worker, TWork){}
-	}
-
-	w := &worker[TWork]{
-		terminate:         make(chan struct{}, 2),
-		workBucket:        workPile,
-		workHandler:       workHandler,
-		timeout:           timeout,
-		timedOutWorkers:   timedOutWorkers,
-		id:                int(atomic.AddInt64(&uniqueIdCounter, 1)),
-	}
-
-	go workerGoroutine(w)
-
-	return w
+//issueNewWorkerId returns an int incremented by one every time this function is invoked
+func issueNewWorkerId() int {
+	return int(atomic.AddInt64(&uniqueIdCounter, 1))
 }
