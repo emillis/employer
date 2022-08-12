@@ -4,5 +4,4 @@ package workerPool
 
 type Worker interface {
 	Id() int
-	Terminate()
 }
