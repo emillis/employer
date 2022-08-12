@@ -1,5 +1,7 @@
 package workerPool
 
+import "time"
+
 //===========[STATIC/CACHE]=============================================================================================
 
 var defaultRequirements = Requirements{
@@ -7,6 +9,7 @@ var defaultRequirements = Requirements{
 	MaxWorkers:            10,
 	WorkBucketSize:        10,
 	WorkerSpawnMultiplier: 2,
+	Timeout:               time.Second * 2,
 }
 
 //===========[STRUCTS]==================================================================================================
@@ -28,6 +31,10 @@ type Requirements struct {
 	//means, every time there are not enough workers to handle all the work, there will be another 10 spawned at a time
 	//until either they can handle all the work or ceiling of MaxWorkers is reached
 	WorkerSpawnMultiplier int `json:"worker_spawn_multiplier" bson:"worker_spawn_multiplier"`
+
+	//Amount of time that the worker spends idle before it quits. This Timeout applies only to the workers that are
+	//dynamically spawned (up to number of MaxWorkers). Number of workers will not drop below MinWorkers count
+	Timeout time.Duration `json:"timeout" bson:"timeout"`
 }
 
 //===========[FUNCTIONS]====================================================================================================
@@ -48,5 +55,9 @@ func makeRequirementsReasonable(r *Requirements) {
 
 	if r.WorkerSpawnMultiplier < 1 {
 		r.WorkerSpawnMultiplier = 1
+	}
+
+	if r.Timeout.String() == "0s" {
+		r.Timeout = defaultRequirements.Timeout
 	}
 }
