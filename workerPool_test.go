@@ -8,8 +8,8 @@ import (
 //===========[TESTS]====================================================================================================
 
 func TestNew(t *testing.T) {
-	wpNoReq := New[string](nil)
-	wpWithReq := New[string](&Requirements{
+	wpNoReq := NewWorkerPool[string](func(Worker, string) {}, nil)
+	wpWithReq := NewWorkerPool[string](func(Worker, string) {}, &Requirements{
 		MinWorkers:            10,
 		MaxWorkers:            100,
 		WorkBucketSize:        25,
@@ -17,21 +17,21 @@ func TestNew(t *testing.T) {
 	})
 
 	if wpNoReq == nil || wpWithReq == nil {
-		t.Errorf("Expected to receive non nil values from function New(), got %T and %T", wpNoReq, wpWithReq)
+		t.Errorf("Expected to receive non nil values from function NewWorkerPool(), got %T and %T", wpNoReq, wpWithReq)
 	}
 }
 
-func TestWorkerPool_ActiveWorkerCount(t *testing.T) {
-	wp1 := New[string](nil)
-	wp2 := New[string](&Requirements{
+func TestWorkerPool_WorkerCount(t *testing.T) {
+	wp1 := NewWorkerPool[string](func(Worker, string) {}, nil)
+	wp2 := NewWorkerPool[string](func(Worker, string) {}, &Requirements{
 		MinWorkers:            10,
 		MaxWorkers:            20,
 		WorkBucketSize:        10,
 		WorkerSpawnMultiplier: 5,
 	})
 
-	ac1 := wp1.ActiveWorkerCount()
-	ac2 := wp2.ActiveWorkerCount()
+	ac1 := wp1.WorkerCount()
+	ac2 := wp2.WorkerCount()
 
 	if ac1 != 1 {
 		t.Errorf("Expected to have active worker count to be 1, got %d in wp1", ac1)
@@ -42,37 +42,35 @@ func TestWorkerPool_ActiveWorkerCount(t *testing.T) {
 	}
 }
 
-func TestWorkerPool_WorkHandler(t *testing.T) {
-	result := ""
-	wp1 := New[string](nil)
-	expectedResult := "this_is_working"
-	wg := sync.WaitGroup{}
-
-	wp1.WorkHandler(func(w Worker, work string) {
-		wg.Done()
-		result = work
-	})
-
-	wg.Add(1)
-	wp1.AddWork(expectedResult)
-
-	wg.Wait()
-
-	if result == "" {
-		t.Errorf("Variable result should be \"%s\", got \"%s\"", expectedResult, result)
-	}
-}
+//func TestWorkerPool_WorkHandler(t *testing.T) {
+//	result := ""
+//	wp1 := NewWorkerPool[string](nil)
+//	expectedResult := "this_is_working"
+//	wg := sync.WaitGroup{}
+//
+//	wp1.WorkHandler(func(w Worker, work string) {
+//		wg.Done()
+//		result = work
+//	})
+//
+//	wg.Add(1)
+//	wp1.AddWork(expectedResult)
+//
+//	wg.Wait()
+//
+//	if result == "" {
+//		t.Errorf("Variable result should be \"%s\", got \"%s\"", expectedResult, result)
+//	}
+//}
 
 func TestWorkerPool_AddWork(t *testing.T) {
 	result := ""
-	wp1 := New[string](nil)
-	expectedResult := "this_is_working"
 	wg := sync.WaitGroup{}
-
-	wp1.WorkHandler(func(w Worker, work string) {
+	wp1 := NewWorkerPool[string](func(w Worker, work string) {
 		wg.Done()
 		result = work
-	})
+	}, nil)
+	expectedResult := "this_is_working"
 
 	wg.Add(1)
 	wp1.AddWork(expectedResult)
@@ -85,15 +83,13 @@ func TestWorkerPool_AddWork(t *testing.T) {
 }
 
 func TestWorker_Id(t *testing.T) {
-	wp := New[string](nil)
 	wg := sync.WaitGroup{}
 	result := 0
-	requiredResult := 1
-
-	wp.WorkHandler(func(w Worker, work string) {
+	wp := NewWorkerPool[string](func(w Worker, work string) {
 		wg.Done()
 		result = w.Id()
-	})
+	}, nil)
+	requiredResult := 1
 
 	wg.Add(1)
 	wp.AddWork("x1")
@@ -103,4 +99,8 @@ func TestWorker_Id(t *testing.T) {
 	if result != requiredResult {
 		t.Errorf("Required result is %d, got %d", requiredResult, result)
 	}
+}
+
+func TestWorker_SetWorkHandler(t *testing.T) {
+
 }
