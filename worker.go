@@ -16,7 +16,7 @@ type worker[TWork any] struct {
 	workBucket chan TWork
 
 	//This function will be processing the work from workBucket
-	workHandler func(Worker, TWork)
+	workHandler func(TWork)
 
 	//Holds pointer to the pool this worker resides in
 	workerPool *WorkerPool[TWork]
@@ -42,7 +42,7 @@ func (w *worker[TWork]) spawnGoroutine() {
 			select {
 			case work := <-w.workBucket:
 				stoppedOnTime := t.Stop()
-				w.workHandler(w, work)
+				w.workHandler(work)
 				//If this check is not made, you can restart the timer after this goroutine has already exited
 				//and once the timer fires it will try to send signal down the channel that nobody is listening to
 				if !stoppedOnTime {

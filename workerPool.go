@@ -18,7 +18,7 @@ type WorkerPool[TWork any] struct {
 	workers cacheMachine.Cache[int, *worker[TWork]]
 
 	//This will be passed to each worker to use for work processing
-	workHandler func(Worker, TWork)
+	workHandler func(TWork)
 }
 
 //------PRIVATE------
@@ -103,7 +103,7 @@ func workerPoolGoroutine[TWork any](wp *WorkerPool[TWork]) {
 }
 
 //NewWorkerPool creates and returns a new worker pool
-func NewWorkerPool[TWork any](workHandler func(Worker, TWork), r *Requirements) *WorkerPool[TWork] {
+func NewWorkerPool[TWork any](workHandler func(TWork), r *Requirements) *WorkerPool[TWork] {
 	if r == nil {
 		r = &defaultRequirements
 	} else {
