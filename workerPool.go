@@ -41,22 +41,6 @@ func (wp *WorkerPool[TWork]) addWorkers(n int, timeout time.Duration) {
 	}
 }
 
-//terminateWorkers removes a number of workers specified in the argument
-func (wp *WorkerPool[TWork]) terminateWorkers(n int) {
-	//if n < 1 {
-	//	return
-	//}
-	//
-	//count := wp.workers.Count()
-	//if n > count {
-	//	n = count
-	//}
-	//
-	//for i := 0; i < n; i++ {
-	//	wp.workerTerminator <- struct{}{}
-	//}
-}
-
 //------PUBLIC------
 
 //AddWork sends work to workers
