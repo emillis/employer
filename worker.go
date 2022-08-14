@@ -45,23 +45,15 @@ func (w *worker[TWork]) spawnGoroutine() {
 				w.workHandler(work)
 				//If this check is not made, you can restart the timer after this goroutine has already exited
 				//and once the timer fires it will try to send signal down the channel that nobody is listening to
-				if !stoppedOnTime {
-					continue
+				if stoppedOnTime {
+					t.Reset(w.timeout)
 				}
-				t.Reset(w.timeout)
 
 			case <-exit:
-				break
+				return
 			}
 		}
 	}()
-}
-
-//===========[PUBLIC]====================================================================================================
-
-//Id returns this worker's ID
-func (w *worker[TWork]) Id() int {
-	return w.id
 }
 
 //===========[FUNCTIONALITY]====================================================================================================
