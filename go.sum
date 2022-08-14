@@ -2,3 +2,5 @@ github.com/emillis/cacheMachine v0.1.1 h1:h7xyN/ELlvHZMG9CD+uWOz0/84vT2igAvCOzmf
 github.com/emillis/cacheMachine v0.1.1/go.mod h1:WYvPCQbqbo0v/sDENrUtIHTouVmkrL4cMgYCR/xIvdI=
 github.com/emillis/cacheMachine v0.3.2 h1:6f01bJHkuz2/WgMSzxXJgkOhRzIc7qftG6s6YibNUSQ=
 github.com/emillis/cacheMachine v0.3.2/go.mod h1:WYvPCQbqbo0v/sDENrUtIHTouVmkrL4cMgYCR/xIvdI=
+github.com/emillis/cacheMachine v0.3.3 h1:3FIJFyIuyNR+4ZS/MUhpeDrMoW9ca8yZdiV9gHdSb4k=
+github.com/emillis/cacheMachine v0.3.3/go.mod h1:WYvPCQbqbo0v/sDENrUtIHTouVmkrL4cMgYCR/xIvdI=
