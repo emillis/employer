@@ -41,6 +41,28 @@ func (wp *WorkerPool[TWork]) addWorkers(n int, timeout time.Duration) {
 	}
 }
 
+//This is called for each WorkerPool, and it's responsible for automatic management of worker spawning/removal
+func (wp *WorkerPool[TWork]) spawnGoroutine() {
+	go func() {
+		for {
+			if len(wp.incomingWork) <= wp.requirements.MinWorkers {
+				continue
+			}
+
+			remainingPoolCapacity := wp.requirements.MaxWorkers - wp.workers.Count()
+			n := wp.requirements.WorkerSpawnMultiplier
+
+			if n > remainingPoolCapacity {
+				n = remainingPoolCapacity
+			}
+
+			wp.addWorkers(n, wp.requirements.Timeout)
+
+			time.Sleep(time.Microsecond * 100)
+		}
+	}()
+}
+
 //------PUBLIC------
 
 //AddWork sends work to workers
@@ -55,39 +77,8 @@ func (wp *WorkerPool[TWork]) WorkerCount() int {
 
 //===========[FUNCTIONS]================================================================================================
 
-//This is called as goroutine and it overseas a single WorkerPool element
-func workerPoolGoroutine[TWork any](wp *WorkerPool[TWork]) {
-	if wp == nil {
-		return
-	}
-
-	var length, remainingPoolCapacity int
-	n := wp.requirements.WorkerSpawnMultiplier
-
-	for {
-		select {
-		//Spawning more workers if there is too much work
-		case <-time.After(time.Microsecond * 100):
-			length = len(wp.incomingWork) //TODO: Benchmark these. Perhaps not assigning variables is faster?
-			if length <= wp.requirements.MinWorkers {
-				continue
-			}
-
-			remainingPoolCapacity = wp.requirements.MaxWorkers - wp.workers.Count()
-			n = wp.requirements.WorkerSpawnMultiplier
-
-			if n > remainingPoolCapacity {
-				n = remainingPoolCapacity
-			}
-
-			wp.addWorkers(n, wp.requirements.Timeout)
-		}
-	}
-
-}
-
-//NewWorkerPool creates and returns a new worker pool
-func NewWorkerPool[TWork any](workHandler func(TWork), r *Requirements) *WorkerPool[TWork] {
+//New creates and returns a new WorkerPool
+func New[TWork any](workHandler func(TWork), r *Requirements) *WorkerPool[TWork] {
 	if r == nil {
 		r = &defaultRequirements
 	} else {
@@ -103,7 +94,7 @@ func NewWorkerPool[TWork any](workHandler func(TWork), r *Requirements) *WorkerP
 
 	wp.addWorkers(wp.requirements.MinWorkers, time.Hour*8760)
 
-	go workerPoolGoroutine[TWork](wp)
+	wp.spawnGoroutine()
 
 	return wp
 }

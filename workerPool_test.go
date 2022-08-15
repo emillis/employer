@@ -9,8 +9,8 @@ import (
 //===========[TESTS]====================================================================================================
 
 func TestNew(t *testing.T) {
-	wpNoReq := NewWorkerPool[string](func(string) {}, nil)
-	wpWithReq := NewWorkerPool[string](func(string) {}, &Requirements{
+	wpNoReq := New[string](func(string) {}, nil)
+	wpWithReq := New[string](func(string) {}, &Requirements{
 		MinWorkers:            10,
 		MaxWorkers:            100,
 		WorkBucketSize:        25,
@@ -18,13 +18,13 @@ func TestNew(t *testing.T) {
 	})
 
 	if wpNoReq == nil || wpWithReq == nil {
-		t.Errorf("Expected to receive non nil values from function NewWorkerPool(), got %T and %T", wpNoReq, wpWithReq)
+		t.Errorf("Expected to receive non nil values from function New(), got %T and %T", wpNoReq, wpWithReq)
 	}
 }
 
 func TestWorkerPool_WorkerCount(t *testing.T) {
-	wp1 := NewWorkerPool[string](func(string) {}, nil)
-	wp2 := NewWorkerPool[string](func(string) {}, &Requirements{
+	wp1 := New[string](func(string) {}, nil)
+	wp2 := New[string](func(string) {}, &Requirements{
 		MinWorkers:            10,
 		MaxWorkers:            20,
 		WorkBucketSize:        10,
@@ -46,7 +46,7 @@ func TestWorkerPool_WorkerCount(t *testing.T) {
 func TestWorkerPool_AddWork(t *testing.T) {
 	result := ""
 	wg := sync.WaitGroup{}
-	wp1 := NewWorkerPool[string](func(work string) {
+	wp1 := New[string](func(work string) {
 		wg.Done()
 		result = work
 	}, nil)
@@ -67,7 +67,7 @@ func TestWorker_SetWorkHandler(t *testing.T) {
 }
 
 func TestWorkerPool_AutoWorkerManagement(t *testing.T) {
-	wp := NewWorkerPool[int](func(work int) {
+	wp := New[int](func(work int) {
 		time.Sleep(time.Millisecond * 25)
 	}, &Requirements{
 		MinWorkers:            1,
